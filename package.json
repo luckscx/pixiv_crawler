@@ -5,8 +5,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "type": "module",
   "description": "",
   "dependencies": {
+    "@supercharge/promise-pool": "^3.2.0",
     "cheerio": "^1.0.0-rc.12",
     "puppeteer": "^22.15.0"
   }

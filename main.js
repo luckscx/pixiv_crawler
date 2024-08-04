@@ -1,10 +1,13 @@
-const cheerio = require('cheerio')
-const crypto = require('crypto');
-const puppeteer = require('puppeteer');
-const path = require('path');
-const fs = require('node:fs/promises');
-const { Readable } = require('stream');
-const { finished } = require('node:stream/promises');
+import cheerio from 'cheerio'
+import crypto from 'crypto'
+import puppeteer from 'puppeteer'
+import path from 'path'
+import fs from 'node:fs/promises'
+import { PromisePool } from '@supercharge/promise-pool'
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
+const __dirname = path.dirname(__filename); // get the name of the directory
 
 const cacheDir = path.join(__dirname, 'cache');
 const book_dist_dir = path.join(__dirname, 'books');
@@ -22,7 +25,6 @@ let browser = null
 const pre_env = async () => {
     await check_dir_exist(cacheDir)
     await check_dir_exist(book_dist_dir)
-    // const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     browser = await puppeteer.launch({headless: false, userDataDir:"./browser_data"} );
 }
 
@@ -80,7 +82,6 @@ async function fetchAndCache(url, force = false) {
             await fs.rm(filePath)
         }
         await fs.access(filePath);
-        //console.log(`从缓存中获取: ${url}  ${filePath}`);
         return await fs.readFile(filePath, 'utf-8');
     } catch (err) {
         if (err.code === 'ENOENT') {
@@ -198,13 +199,12 @@ const loadSeries = async (target_url) => {
     const start_time = new Date()
     let r = await fetchAndCache(target_url, false)
     const series_obj = parse_series(r)
-    const readable = Readable.from(series_obj["pages"]).map(loadSinglePage, { concurrency: 3 })
-    readable.on("data",
-        (word_count) => {
+    await PromisePool.withConcurrency(3)
+        .for(series_obj["pages"])
+        .process(async (page) => {
+            let word_count = await loadSinglePage(page)
             series_obj["word_count"] += word_count
-        }
-    )
-    await finished(readable)
+        })
     const end_time = new Date()
     console.log(`used ${end_time - start_time} ms`)
     return series_obj

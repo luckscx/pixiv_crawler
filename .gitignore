@@ -3,3 +3,4 @@ browser_data
 cache
 node_modules
 .idea
+package-lock.json
