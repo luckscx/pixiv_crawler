@@ -3,8 +3,8 @@ const crypto = require('crypto');
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('node:fs/promises');
-
-const load_timeout = 30 * 1000
+const { Readable } = require('stream');
+const { finished } = require('node:stream/promises');
 
 const cacheDir = path.join(__dirname, 'cache');
 const book_dist_dir = path.join(__dirname, 'books');
@@ -31,12 +31,22 @@ const clean_env = async () => {
 }
 
 const load_page_puppet = async function(url){
+    let start = new Date()
     const page = await browser.newPage();
-    // await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36');
     await page.goto(url,  { waitUntil:"load", timeout: 0});
     const html = await page.content();
     page.close()
+    console.log(`load ${url}  with ${new Date() - start}ms`)
     return html
+}
+
+const getTags = ($) => {
+    const tags = [];
+    $('.kMbYox span.fEUsms a').each((index, element) => {
+        let tag = $(element).text()
+        tags.push(tag)
+    });
+    return tags;
 }
 
 function getMetaProperties($) {
@@ -44,9 +54,7 @@ function getMetaProperties($) {
     $('meta').each((index, element) => {
         const property = $(element).attr('property');
         const content = $(element).attr('content');
-
         if (property && content) {
-            console.log(property, content)
             if (property === "og:title")  {
                 metaProperties["full_title"] = content
             }
@@ -59,6 +67,7 @@ function getMetaProperties($) {
         }
     });
 
+    metaProperties["tags"] = getTags($)
     return metaProperties;
 }
 
@@ -71,15 +80,13 @@ async function fetchAndCache(url, force = false) {
             await fs.rm(filePath)
         }
         await fs.access(filePath);
-        const content = await fs.readFile(filePath, 'utf-8');
-        console.log(`从缓存中获取: ${url}  ${filePath}`);
-        return content;
+        //console.log(`从缓存中获取: ${url}  ${filePath}`);
+        return await fs.readFile(filePath, 'utf-8');
     } catch (err) {
         if (err.code === 'ENOENT') {
             try {
                 const html = await load_page_puppet(url);
                 await fs.writeFile(filePath, html);
-                console.log(`将内容缓存: ${url}`);
                 return html;
             } catch (error) {
                 console.error(`获取 ${url} 时出错: ${error}`);
@@ -95,15 +102,19 @@ const parse_content = (html_data) => {
     const line_class = "sc-iemWCZ"
     const $ = cheerio.load(html_data)
     const metas = getMetaProperties($)
-    console.log(metas)
-    const texts = $(`p.${line_class}`).map
-    ((index, element) =>
-        $(element).text()).get();
-    console.log(texts)
-    const head_text = `章节:${metas["title"]}`
+    let word_count = 0
+    const texts = $(`p.${line_class} span`).map
+    ((index, element) => {
+        const line = $(element).text()
+        word_count += line.length
+        return line
+    }
+    ).get();
+    const head_text = `章节: ${metas["title"]}`
     texts.unshift(head_text)
-    return texts
+    return {"count": word_count, "lines" : texts}
 }
+
 
 
 const pixiv_base_host = "https://www.pixiv.net"
@@ -113,7 +124,7 @@ const parse_series = (html_data) => {
     const $ = cheerio.load(html_data)
     const metas = getMetaProperties($)
     const pages = []
-    $(`a`).map((index, element) => {
+    $(`a${link_class}`).map((index, element) => {
         const seg_index = index + 1
         const seg_title = $(element).text()
         const seg_url = $(element).attr("href")
@@ -126,26 +137,25 @@ const parse_series = (html_data) => {
     })
     if (pages.length === 0) {
         throw "未加载到具体分页"
+    } else {
+        console.log(`获取 《${metas["full_title"]}》 总 ${pages.length} 章节`)
+        console.log(`标签: ${metas["tags"].join(",")}` )
     }
     metas["pages"] = pages
+    metas["word_count"] = 0
     return metas
 }
 
-const savePageToTxt = async (page_obj, filename) => {
-    const lines = page_obj["lines"]
-    if (lines.length > 0) {
-        await fs.writeFile(filename, lines.join("\n"))
-        console.log(`save to ${filename}`)
-    } else {
-        console.log("no lines")
-    }
-}
-
-const megrePages = (book_obj) => {
+const mergePages = (book_obj) => {
     let lines = []
     const pages = book_obj["pages"]
     lines.push(`书名：${book_obj["full_title"]}`)
-    lines.push(`简介：${book_obj["desc"]}`)
+    lines.push(`标签：${book_obj["tags"].join(",")}`)
+    lines.push(`简介：${book_obj["desc"] || "无"}`)
+    lines.push(`总字数：${book_obj["word_count"]}`)
+    for (const page of pages) {
+        lines.push(`子章节：${page["title"]} 字数: ${page["count"]}`)
+    }
     for (const page of pages) {
         lines.push("====================")
         lines = lines.concat(page["lines"])
@@ -155,29 +165,61 @@ const megrePages = (book_obj) => {
 
 const saveSeriesToText = async (book_obj) => {
     const out_txt_file = path.join(book_dist_dir, `${book_obj["title"]}.txt`)
-    const lines = megrePages(book_obj)
+    const lines =  mergePages(book_obj)
     if (lines.length > 0) {
         await fs.writeFile(out_txt_file, lines.join("\n"))
-        console.log(`save to ${out_txt_file} total line ${lines.length}`)
+        console.log(`save to ${out_txt_file} 总行数${lines.length} 总字数 ${book_obj["word_count"]}`)
     } else {
         console.log("no lines")
     }
 }
 
-// const target_url = 'https://www.pixiv.net/novel/show.php?id=22623110'
-const target_url = 'https://www.pixiv.net/novel/series/12146141'
+const loadSinglePage = async (page) => {
+    if (!page["retry"]) {
+        page["retry"] = 0
+    }
+    let retry = page["retry"]
+    const pr = await fetchAndCache(page.url, retry > 0)
+    const res = parse_content(pr)
+    page["lines"] = res["lines"]
+    let count = res["count"]
+    page["count"] = count
+    if (count === 0 && retry <= 3) {
+        console.log(`子章节 《${page["title"]}》 字数空 重试 ${retry + 1}`)
+        page["retry"] += 1
+        return await loadSinglePage(page)
+    } else {
+        console.log(`子章节 《${page["title"]}》 总字数:${count}`)
+        return count
+    }
+}
+
+const loadSeries = async (target_url) => {
+    const start_time = new Date()
+    let r = await fetchAndCache(target_url, false)
+    const series_obj = parse_series(r)
+    const readable = Readable.from(series_obj["pages"]).map(loadSinglePage, { concurrency: 3 })
+    readable.on("data",
+        (word_count) => {
+            series_obj["word_count"] += word_count
+        }
+    )
+    await finished(readable)
+    const end_time = new Date()
+    console.log(`used ${end_time - start_time} ms`)
+    return series_obj
+}
+
 
 const main = async() => {
     await pre_env()
-    let r = await fetchAndCache(target_url, true)
-    const series_obj = parse_series(r)
-    console.log(series_obj)
-    for (const page of series_obj["pages"]) {
-        const pr = await fetchAndCache(page.url)
-        page["lines"] = parse_content(pr)
+    const target_url = process.argv[2]
+    if (!target_url) {
+        console.log("target_url 不存在")
+        return
     }
+    const series_obj = await loadSeries(target_url)
     await saveSeriesToText(series_obj)
-
     await clean_env()
 }
 
@@ -186,4 +228,3 @@ main().then(() =>
 ).catch(err => {
     console.log(err)
 })
-
