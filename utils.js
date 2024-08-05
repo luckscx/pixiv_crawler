@@ -26,7 +26,8 @@ let browser = null
 const pre_env = async () => {
     await check_dir_exist(cacheDir)
     await check_dir_exist(book_dist_dir)
-    browser = await puppeteer.launch({headless: false, userDataDir: "./browser_data", defaultViewport: null});
+    browser = await puppeteer.launch({headless: false, userDataDir: "./browser_data",
+        defaultViewport: null, args: ['--no-sandbox','--disable-setuid-sandbox']});
 }
 
 const clean_env = async () => {

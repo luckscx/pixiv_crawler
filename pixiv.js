@@ -26,7 +26,7 @@ const checkUrlType = (in_url) => {
     }
 
     console.log(`target_url ${in_url} 无匹配`)
-    process.exit(-1)
+    return null
 }
 const getTags = ($) => {
     const tags = [];
@@ -282,6 +282,9 @@ const loadSeries = async (target_url) => {
 
 const loadAndSave = async (target_url) => {
     const url_type = checkUrlType(target_url)
+    if (!url_type) {
+        return false
+    }
     if (url_type === "series") {
         const series_obj = await loadSeries(target_url)
         await saveSeriesToText(series_obj)
@@ -306,5 +309,6 @@ const loadAndSave = async (target_url) => {
 }
 
 export {
-    loadAndSave
+    loadAndSave,
+    checkUrlType
 }
