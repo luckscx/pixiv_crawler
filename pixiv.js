@@ -81,7 +81,7 @@ const parse_content = (html_data) => {
             return line
         }
     ).get();
-    const head_text = `章节: ${metas["title"]}`
+    const head_text = `#${metas["title"]}\n`
     texts.unshift(head_text)
     metas["word_count"] = word_count
     metas["lines"] = texts
@@ -187,7 +187,7 @@ const mergePages = (book_obj) => {
         lines.push(`子章节：${page["title"]} 字数: ${page["word_count"]}`)
     }
     for (const page of pages) {
-        lines.push("====================")
+        lines.push("\n\n====================")
         lines = lines.concat(page["lines"])
     }
     return lines

@@ -31,3 +31,8 @@ const tag_top_fetch_num = 5       //最终拉取star top的作品数量
 - cheerio
 - @supercharge/promise-pool
 
+
+# ToDo
+
+- 解决class 随机错误问题
+- 实现账号密码自动登录
