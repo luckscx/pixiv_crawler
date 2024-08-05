@@ -5,14 +5,15 @@ import path from "path";
 import fs from "node:fs/promises";
 import puppeteer from "puppeteer";
 import crypto from "crypto";
+import * as cfg from "./config.js";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
 
 const cacheDir = path.join(__dirname, 'cache');
-const book_dist_dir = path.join(__dirname, 'books');
+const book_dist_dir = cfg.output_dir;
 
-const check_dir_exist = async (dir_path) =>{
+const check_dir_exist = async (dir_path) => {
     try {
         await fs.access(dir_path);
     } catch {
@@ -25,17 +26,17 @@ let browser = null
 const pre_env = async () => {
     await check_dir_exist(cacheDir)
     await check_dir_exist(book_dist_dir)
-    browser = await puppeteer.launch({headless: false, userDataDir:"./browser_data", defaultViewport: null} );
+    browser = await puppeteer.launch({headless: false, userDataDir: "./browser_data", defaultViewport: null});
 }
 
 const clean_env = async () => {
     await browser.close();
 }
 
-const load_page_puppet = async function(url){
+const load_page_puppet = async function (url) {
     let start = new Date()
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil:"load", timeout: 0, });
+    await page.goto(url, {waitUntil: "load", timeout: 0,});
     const html = await page.content();
     page.close()
     console.log(`load ${url}  with ${new Date() - start}ms`)
@@ -77,9 +78,5 @@ function sortByKey(array, key, reverse = false) {
 }
 
 export {
-    fetchAndCache,
-    pre_env,
-    clean_env,
-    sortByKey,
-    book_dist_dir,
+    fetchAndCache, pre_env, clean_env, sortByKey, book_dist_dir,
 }
