@@ -19,6 +19,7 @@
         async function submitData() {
             const inputData = document.getElementById("input-data").value;
             const outputElement = document.getElementById('output');
+            outputElement.textContent = '开始\n';
 
             // 创建 EventSource 连接
             const eventSource = new EventSource(`/events?url=${inputData}`); // 替换 your_url

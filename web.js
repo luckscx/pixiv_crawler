@@ -10,13 +10,9 @@ const port = 3000;
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
 
-// 设置静态文件夹
 app.use(express.static(path.join(__dirname, 'assets')));
 
-// SSE 接口
 app.get('/events', (req, res) => {
-    console.log(1)
-    // 设置响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -68,7 +64,6 @@ app.get('/events', (req, res) => {
     });
 });
 
-// 启动服务器
 app.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
 });
