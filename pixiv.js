@@ -165,7 +165,7 @@ const parse_series = (html_data) => {
         pages.push(page_obj)
     })
     if (pages.length === 0) {
-        throw "未加载到具体分页"
+        console.log("未加载到具体分页，检查登录状态")
     } else {
         console.log(`获取 《${metas["full_title"]}》 总 ${pages.length} 章节`)
         console.log(`标签: ${metas["tags"].join(",")}` )
