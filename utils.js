@@ -3,12 +3,65 @@
 import {fileURLToPath} from "url";
 import path from "path";
 import fs from "node:fs/promises";
+import {existsSync} from "node:fs";
+import os from "node:os";
 import puppeteer from "puppeteer-core";
 import crypto from "crypto";
 import * as cfg from "./config.js";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
+
+// 根据当前操作系统自适应查找 Chrome / Chromium 可执行文件路径
+const findChromePath = () => {
+    // 1. 优先使用环境变量显式指定
+    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH;
+    if (envPath && existsSync(envPath)) {
+        return envPath;
+    }
+
+    // 2. 按平台列出常见安装路径
+    const platform = os.platform();
+    let candidates = [];
+    if (platform === 'darwin') {
+        candidates = [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+            '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+        ];
+    } else if (platform === 'win32') {
+        const programFiles = process.env['PROGRAMFILES'] || 'C:\\Program Files';
+        const programFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+        const localAppData = process.env['LOCALAPPDATA'] || '';
+        candidates = [
+            path.join(programFiles, 'Google\\Chrome\\Application\\chrome.exe'),
+            path.join(programFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
+            localAppData && path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe'),
+            path.join(programFiles, 'Microsoft\\Edge\\Application\\msedge.exe'),
+            path.join(programFilesX86, 'Microsoft\\Edge\\Application\\msedge.exe'),
+        ].filter(Boolean);
+    } else {
+        // linux 及其他类 unix
+        candidates = [
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+            '/usr/bin/microsoft-edge',
+            '/snap/bin/chromium',
+        ];
+    }
+
+    const found = candidates.find(p => existsSync(p));
+    if (found) {
+        return found;
+    }
+
+    throw new Error(
+        `未找到可用的 Chrome/Chromium 可执行文件（platform=${platform}）。` +
+        `请安装 Chrome/Chromium，或通过环境变量 PUPPETEER_EXECUTABLE_PATH 指定可执行文件路径。`
+    );
+};
 
 const cacheDir = path.join(__dirname, 'cache');
 const book_dist_dir = cfg.output_dir;
@@ -31,7 +84,7 @@ const pre_env = async () => {
 
     browser = await puppeteer.launch({
         headless: true,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: findChromePath(),
         defaultViewport: null,
         args: [
             '--no-sandbox',
