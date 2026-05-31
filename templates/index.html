@@ -17,6 +17,19 @@
         <div id="downloads" class="mt-2"></div>
     </div>
     <script>
+        // 页面加载后尝试读取剪贴板，若是合法 pixiv URL 则填入输入框
+        const PIXIV_URL_RE = /^https:\/\/www\.pixiv\.net\/(novel\/series\/\d+|novel\/show\.php\?id=\d+|(tags\/.+\/novels|search)(\?.*)?)$/;
+        window.addEventListener('load', async () => {
+            try {
+                const text = (await navigator.clipboard.readText()).trim();
+                if (PIXIV_URL_RE.test(text)) {
+                    document.getElementById('input-data').value = text;
+                }
+            } catch (_) {
+                // 用户未授权剪贴板权限，静默忽略
+            }
+        });
+
         async function submitData() {
             const inputData = document.getElementById("input-data").value;
             const outputElement = document.getElementById('output');

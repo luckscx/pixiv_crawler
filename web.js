@@ -16,10 +16,12 @@ const __dirname = path.dirname(__filename); // get the name of the directory
 const booksDir = path.resolve(__dirname, cfg.output_dir);
 
 // 启动时加载 HTML 模板，渲染时填充占位符，保持路由逻辑简洁
-const bookTemplate = await fs.readFile(path.join(__dirname, 'templates', 'book.html'), 'utf-8');
+const templatesDir = path.join(__dirname, 'templates');
+const indexTemplate = await fs.readFile(path.join(templatesDir, 'index.html'), 'utf-8');
+const bookTemplate  = await fs.readFile(path.join(templatesDir, 'book.html'),  'utf-8');
 const render = (tpl, vars) => tpl.replace(/{{(\w+)}}/g, (_, key) => vars[key] ?? '');
 
-app.use(express.static(path.join(__dirname, 'assets')));
+app.get('/', (_req, res) => res.send(indexTemplate));
 
 // 下载已生成的 TXT 文件
 app.get('/download/:name', (req, res) => {
