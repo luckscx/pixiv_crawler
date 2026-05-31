@@ -14,19 +14,38 @@
         <button class="btn btn-success" type="button"  onclick="submitData()">Go</button>
         <span><a href="/book">列表</a></span>
         <pre id="output"></pre>
+        <div id="downloads" class="mt-2"></div>
     </div>
     <script>
         async function submitData() {
             const inputData = document.getElementById("input-data").value;
             const outputElement = document.getElementById('output');
+            const downloadsElement = document.getElementById('downloads');
             outputElement.textContent = '开始\n';
+            downloadsElement.innerHTML = '';
 
             // 创建 EventSource 连接
             const eventSource = new EventSource(`/events?url=${inputData}`); // 替换 your_url
 
             // 处理接收到的数据
             eventSource.onmessage = function(event) {
-                outputElement.textContent += event.data + '\n'; // 显示每一行
+                const data = event.data;
+                if (data.startsWith('DOWNLOAD:')) {
+                    // 任务完成，渲染可点击的下载链接
+                    try {
+                        const info = JSON.parse(data.slice('DOWNLOAD:'.length));
+                        const a = document.createElement('a');
+                        a.href = info.url;
+                        a.textContent = '下载 ' + info.name;
+                        a.setAttribute('download', info.name);
+                        a.className = 'btn btn-primary d-block my-1';
+                        downloadsElement.appendChild(a);
+                    } catch (e) {
+                        console.error('解析下载链接失败', e);
+                    }
+                    return;
+                }
+                outputElement.textContent += data + '\n'; // 显示每一行
             };
 
             // 处理连接关闭

@@ -87,6 +87,17 @@ const load_page_puppet = async function (url) {
     return html
 }
 
+// 等待网络静止（适用于需要懒加载内容的页面，如 tag 搜索列表）
+const load_page_puppet_idle = async function (url) {
+    let start = new Date()
+    const page = await browser.newPage();
+    await page.goto(url, {waitUntil: "networkidle2", timeout: 60000});
+    const html = await page.content();
+    page.close()
+    console.log(`load(idle) ${url}  with ${new Date() - start}ms`)
+    return html
+}
+
 async function fetchAndCache(url, force = false) {
     const hash = crypto.createHash('md5').update(url).digest('hex');
     const filePath = path.join(cacheDir, `${hash}.html`);
@@ -122,5 +133,5 @@ function sortByKey(array, key, reverse = false) {
 }
 
 export {
-    fetchAndCache, pre_env, clean_env, sortByKey, book_dist_dir,
+    fetchAndCache, load_page_puppet_idle, pre_env, clean_env, sortByKey, book_dist_dir,
 }

@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 import path from "path";
 import fs from "node:fs/promises";
 import {PromisePool} from "@supercharge/promise-pool";
-import {book_dist_dir, fetchAndCache, sortByKey} from "./utils.js";
+import {book_dist_dir, fetchAndCache, load_page_puppet_idle, sortByKey} from "./utils.js";
 import * as cfg from "./config.js";
 
 const checkUrlType = (in_url) => {
@@ -19,7 +19,7 @@ const checkUrlType = (in_url) => {
         return "single"
     }
 
-    const tagUrl = /^https:\/\/www.pixiv.net\/tags\/.*\/novels\?gs=\d+$/
+    const tagUrl = /^https:\/\/www\.pixiv\.net\/(tags\/.+\/novels|search)(\?.*)?$/
     if (tagUrl.test(in_url)) {
         console.log(`novel tag url ${in_url}`)
         return "tag"
@@ -84,33 +84,25 @@ const parse_content = (html_data) => {
     return metas
 }
 
-const parseNumStr = (str) => {
-    str = str.replace(",", "")
-    return parseInt(str)
-}
-
 const parseTagListPage = (tag_obj, html_data) => {
-    const novel_class = "div.sc-11uoiov-0.hBozqW"
     const $ = cheerio.load(html_data)
     let count = 0
     let star_count = 0
-    $(novel_class).map((i, ele) => {
-        let title_ele =  $(ele).find("a.sc-d98f2c-0.sc-11uoiov-5.hWHHNe")
-        let url = pixiv_base_host + title_ele.attr("href")
-        let star_num = $(ele).find("div.sc-eoqmwo-1.grSeZG span.sc-eoqmwo-2.dfUmJJ").text()
-        if (star_num) {
-            star_num = parseNumStr(star_num)
-        } else {
-            star_num = 0
-        }
+    $('div.col-span-6').each((i, card) => {
+        const titleLink = $(card).find('a[href^="/novel/show.php"]')
+            .filter((j, a) => $(a).text().trim()).first()
+        const title = titleLink.text().trim()
+        const href = titleLink.attr('href')
+        if (!title || !href) return
+        const starText = $(card).find('[class*="sc-66169772-2"]').text().trim()
+        const star_num = parseInt(starText.replace(',', '')) || 0
         count += 1
         if (star_num > cfg.tag_list_star_min_limit) {
-            const novel_obj = {
-                "title" : title_ele.text(),
-                "url" : url,
-                "star_num" : star_num
-            }
-            tag_obj["novels"].push(novel_obj)
+            tag_obj["novels"].push({
+                title,
+                url: pixiv_base_host + href,
+                star_num,
+            })
             star_count += 1
         }
     })
@@ -123,20 +115,22 @@ const tag_page_num = 30
 
 const parseTagFirstPage = (html_data) => {
     const $ = cheerio.load(html_data)
-    const tag_name_class = "div.cgOIoZ span.bCtdDN"
-    const tag_count_class = "div.cgOIoZ span.sc-1pt8s3a-10"
-    let name = $(tag_name_class).text()
-    let total_cnt = $(tag_count_class).text()
-    total_cnt = parseInt(total_cnt.replace(",",""))
+    // 总数：形如 "12,345件" 的文本
+    let total_cnt = 0
+    $('*').each((i, el) => {
+        const t = $(el).clone().children().remove().end().text().trim()
+        if (/^\d[\d,]+件$/.test(t)) {
+            total_cnt = parseInt(t.replace(/,/g, '').replace('件', ''))
+            return false
+        }
+    })
     const tag_obj = {
-        "total_cnt" : total_cnt,
-        "find_cnt" : 0,
-        "star_ok_cnt" : 0,
-        "name" : name,
-        "novels" : [],
+        "total_cnt"  : total_cnt,
+        "find_cnt"   : 0,
+        "star_ok_cnt": 0,
+        "novels"     : [],
         "total_page" : Math.ceil(total_cnt / tag_page_num)
     }
-    //顺便parse了第一页
     parseTagListPage(tag_obj, html_data)
     return tag_obj
 }
@@ -242,24 +236,24 @@ const loadSinglePage = async (page) => {
 }
 
 const searchTags = async(in_url) => {
-    const first_page = await fetchAndCache(in_url)
-    const tag_obj = parseTagFirstPage(first_page)
-    console.log(tag_obj)
-    if (tag_obj["total_cnt"] > tag_page_num) {
-        const page_urls = []
-        for (let i = 2; i < tag_obj["total_page"]; i++) {
-            const page_url = `${pixiv_base_host}/tags/${tag_obj["name"]}/novels?p=${i}&gs=1`
-            page_urls.push(page_url)
-        }
-        await PromisePool.withConcurrency(cfg.load_page_concurrency)
-            .for(page_urls)
-            .process(async (page_url) => {
-                let page_html = await fetchAndCache(page_url)
-                parseTagListPage(tag_obj, page_html)
-            })
+    // 用 networkidle2 确保收藏数等懒加载内容渲染完毕
+    const first_html = await load_page_puppet_idle(in_url)
+    const tag_obj = parseTagFirstPage(first_html)
 
-        tag_obj["novels"] = sortByKey(tag_obj["novels"], "star_num", true)
+    // pixiv 不一定渲染总数，改为：只要第一页满 30 条就继续翻页，直到拿够 star_ok 或页面不足 30 条
+    const base_url = new URL(in_url)
+    let page_num = 2
+    while (tag_obj["find_cnt"] % tag_page_num === 0) {
+        base_url.searchParams.set('p', page_num)
+        const html = await load_page_puppet_idle(base_url.toString())
+        const before = tag_obj["find_cnt"]
+        parseTagListPage(tag_obj, html)
+        if (tag_obj["find_cnt"] === before) break  // 没有新内容，停止
+        page_num++
     }
+
+    tag_obj["novels"] = sortByKey(tag_obj["novels"], "star_num", true)
+    console.log(`共爬取 ${tag_obj["find_cnt"]} 篇，收藏数 > ${cfg.tag_list_star_min_limit} 的共 ${tag_obj["star_ok_cnt"]} 篇`)
     return tag_obj
 }
 
