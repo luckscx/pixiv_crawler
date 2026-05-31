@@ -3,7 +3,7 @@
 import {fileURLToPath} from "url";
 import path from "path";
 import fs from "node:fs/promises";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import crypto from "crypto";
 import * as cfg from "./config.js";
 
@@ -23,15 +23,58 @@ const check_dir_exist = async (dir_path) => {
 
 let browser = null
 
+const cookieFile = path.join(__dirname, 'cookies.json');
+
 const pre_env = async () => {
     await check_dir_exist(cacheDir)
     await check_dir_exist(book_dist_dir)
-    browser = await puppeteer.launch({headless: false, userDataDir: "./browser_data",
-        defaultViewport: null, args: ['--no-sandbox','--disable-setuid-sandbox']});
+
+    browser = await puppeteer.launch({
+        headless: true,
+        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        defaultViewport: null,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+        ]
+    });
+    console.log('Chrome (headless) 已启动');
+
+    // 读取本地 cookie 文件并注入
+    try {
+        const raw = await fs.readFile(cookieFile, 'utf-8');
+        const rawCookies = JSON.parse(raw);
+        // 浏览器插件导出格式转换为 Puppeteer 标准格式
+        const cookies = rawCookies.map(c => {
+            const cookie = {
+                name: c.name,
+                value: c.value,
+                domain: c.domain,
+                path: c.path || '/',
+                secure: c.secure || false,
+                httpOnly: c.httpOnly || false,
+            };
+            if (c.expirationDate) {
+                cookie.expires = Math.floor(c.expirationDate);
+            }
+            if (c.sameSite && c.sameSite !== 'no_restriction') {
+                cookie.sameSite = c.sameSite;
+            }
+            return cookie;
+        });
+        const page = await browser.newPage();
+        await page.setCookie(...cookies);
+        await page.close();
+        console.log(`已加载 ${cookies.length} 条 cookie`);
+    } catch (e) {
+        console.warn(`读取 cookie 文件失败 (${cookieFile}): ${e.message}`);
+    }
 }
 
 const clean_env = async () => {
-    await browser.close();
+    if (browser) {
+        await browser.close();
+    }
 }
 
 const load_page_puppet = async function (url) {

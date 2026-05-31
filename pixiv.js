@@ -70,11 +70,10 @@ function getMetaProperties($) {
 }
 
 const parse_content = (html_data) => {
-    const line_class = "sc-iemWCZ"
     const $ = cheerio.load(html_data)
     const metas = getMetaProperties($)
     let word_count = 0
-    const texts = $(`p.${line_class} span`).map
+    const texts = $(`span.text-count`).map
     ((index, element) => {
             const line = $(element).text()
             word_count += line.length
