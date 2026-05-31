@@ -29,21 +29,18 @@ const checkUrlType = (in_url) => {
     return null
 }
 const getTags = ($) => {
-    const tags = [];
-
-    // series page
-    $('.kMbYox span.fEUsms a').each((index, element) => {
-        let tag = $(element).text()
-        tags.push(tag)
+    // 找第一个包含 novel tag 链接的 ul，不依赖混淆类名
+    let tags = [];
+    $('ul').each((i, ul) => {
+        const links = $(ul).find('a[href^="/tags/"][href*="/novels"]');
+        if (links.length > 0) {
+            links.each((j, a) => {
+                const tag = $(a).text().trim();
+                if (tag) tags.push(tag);
+            });
+            return false; // 找到第一个就停
+        }
     });
-
-    // 尝试单页的
-    if (tags.length === 0) {
-        $('.gZfuPH span.lhUcKZ a').each((index, element) => {
-            let tag = $(element).text()
-            tags.push(tag)
-        });
-    }
     return tags;
 }
 
@@ -148,16 +145,19 @@ const parseTagFirstPage = (html_data) => {
 const pixiv_base_host = "https://www.pixiv.net"
 
 const parse_series = (html_data) => {
-    const link_class = "a.sc-d98f2c-0.ZgTBh"
     const $ = cheerio.load(html_data)
     const metas = getMetaProperties($)
     const pages = []
-    $(link_class).map((index, element) => {
-        const seg_index = index + 1
-        const seg_title = $(element).text()
+    // 通过 href 选章节链接，文本格式为 "#序号 标题"，不依赖混淆类名
+    $('a[href^="/novel/show.php"]').each((index, element) => {
+        const raw_title = $(element).text().trim()
         const seg_url = $(element).attr("href")
+        if (!raw_title.startsWith('#') || !seg_url) return
+        const spaceIdx = raw_title.indexOf(' ')
+        const seg_index = spaceIdx > 0 ? parseInt(raw_title.slice(1, spaceIdx)) : index + 1
+        const seg_title = spaceIdx > 0 ? raw_title.slice(spaceIdx + 1) : raw_title
         const page_obj = {
-            "url" : pixiv_base_host + seg_url,
+            "url"   : pixiv_base_host + seg_url,
             "title" : seg_title,
             "index" : seg_index
         }
